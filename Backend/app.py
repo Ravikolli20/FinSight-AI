@@ -12,13 +12,12 @@ app = Flask(__name__)
 
 # --- Production CORS Setup ---
 # Set FRONTEND_URL in Render environment variables to your Vercel URL
-allowed_origins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:4173",
-    os.environ.get('FRONTEND_URL')
-]
-CORS(app, origins=[opt for opt in allowed_origins if opt], supports_credentials=True)
+CORS(
+    app,
+    origins=[os.environ.get("FRONTEND_URL")],
+    supports_credentials=True
+)
+
 
 # --- Database Configuration ---
 basedir = os.path.abspath(os.path.dirname(__file__))
