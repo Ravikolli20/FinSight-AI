@@ -19,7 +19,7 @@ const getApiBase = () => {
   } catch (e) {
     // Fallback if import.meta is not supported by the bundler
   }
-  return 'http://localhost:5000/api';
+  return 'http://localhost:5000';
 };
 
 const API_BASE = getApiBase();
