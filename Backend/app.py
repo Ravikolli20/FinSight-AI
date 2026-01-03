@@ -9,6 +9,12 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
+
+
+app = Flask(__name__)
+# Enable CORS - in production, replace '*' with your actual domain
+CORS(app)
+
 @app.route("/", methods=["GET"])
 def root():
     return {
@@ -16,10 +22,6 @@ def root():
         "service": "FinSight AI",
         "environment": "production"
     }
-
-app = Flask(__name__)
-# Enable CORS - in production, replace '*' with your actual domain
-CORS(app)
 
 # --- Configuration ---
 basedir = os.path.abspath(os.path.dirname(__file__))
