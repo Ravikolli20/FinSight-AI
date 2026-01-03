@@ -8,6 +8,15 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 
+
+@app.route("/", methods=["GET"])
+def root():
+    return {
+        "status": "Backend is running",
+        "service": "FinSight AI",
+        "environment": "production"
+    }
+
 app = Flask(__name__)
 # Enable CORS - in production, replace '*' with your actual domain
 CORS(app)
