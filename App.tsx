@@ -9,7 +9,20 @@ import {
  * ==========================================
  */
 
-const API_BASE = 'http://localhost:5000/api';
+// Safely access environment variables to prevent build errors in preview environments
+const getApiBase = () => {
+  try {
+    // Check if we are in a Vite environment
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) {
+      return import.meta.env.VITE_API_URL;
+    }
+  } catch (e) {
+    // Fallback if import.meta is not supported by the bundler
+  }
+  return 'http://localhost:5000/api';
+};
+
+const API_BASE = getApiBase();
 const USER_SESSION_KEY = 'smartfinance_current_user';
 const TOKEN_KEY = 'smartfinance_access_token';
 
@@ -89,7 +102,6 @@ const callGemini = async (prompt: string, systemInstruction: string = "") => {
  * ==========================================
  */
 
-// --- Sidebar Component ---
 const Sidebar: React.FC<{ currentView: AppView; onChangeView: (v: AppView) => void; user: User | null; onLogout: () => void; }> = ({ currentView, onChangeView, user, onLogout }) => {
   const navItems = [
     { id: AppView.DASHBOARD, label: 'Dashboard', icon: '📊' },
@@ -132,7 +144,6 @@ const Sidebar: React.FC<{ currentView: AppView; onChangeView: (v: AppView) => vo
   );
 };
 
-// --- Login Component ---
 const Login: React.FC<{ onLogin: (u: User, t: string) => void; apiBase: string; }> = ({ onLogin, apiBase }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -158,7 +169,7 @@ const Login: React.FC<{ onLogin: (u: User, t: string) => void; apiBase: string; 
       if (res.ok) onLogin(data.user, data.token);
       else setError(data.error || 'Auth failed');
     } catch (err) {
-      setError('Connection failed. Backend active?');
+      setError(`Connection failed. Check ${apiBase}`);
     } finally { setLoading(false); }
   };
 
@@ -188,7 +199,6 @@ const Login: React.FC<{ onLogin: (u: User, t: string) => void; apiBase: string; 
   );
 };
 
-// --- Dashboard Component ---
 const Dashboard: React.FC<{ transactions: Transaction[]; accounts: Account[]; selectedAccountId: string; onSelectAccount: (id: string) => void; }> = ({ transactions, accounts, selectedAccountId, onSelectAccount }) => {
   const filteredTransactions = useMemo(() => selectedAccountId === 'all' ? transactions : transactions.filter(t => t.accountId === selectedAccountId), [transactions, selectedAccountId]);
   
@@ -247,7 +257,6 @@ const Dashboard: React.FC<{ transactions: Transaction[]; accounts: Account[]; se
   );
 };
 
-// --- Transaction List Component ---
 const TransactionList: React.FC<{ transactions: Transaction[]; accounts: Account[]; onDelete: (id: string) => void; }> = ({ transactions, accounts, onDelete }) => {
   const accountMap = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts]);
 
@@ -279,7 +288,6 @@ const TransactionList: React.FC<{ transactions: Transaction[]; accounts: Account
   );
 };
 
-// --- Add Transaction Component ---
 const AddTransaction: React.FC<{ accounts: Account[]; onAdd: (t: Omit<Transaction, 'id'>) => void; }> = ({ accounts, onAdd }) => {
   const [formData, setFormData] = useState({
     amount: '', description: '', category: 'Food', date: new Date().toISOString().split('T')[0],
@@ -314,7 +322,6 @@ const AddTransaction: React.FC<{ accounts: Account[]; onAdd: (t: Omit<Transactio
   );
 };
 
-// --- AI Assistant Component ---
 const AIAssistant: React.FC<{ transactions: Transaction[]; accounts: Account[]; }> = ({ transactions, accounts }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([{ role: 'model', text: 'Ask me about your spending!', timestamp: Date.now() }]);
   const [input, setInput] = useState('');
@@ -356,7 +363,6 @@ const AIAssistant: React.FC<{ transactions: Transaction[]; accounts: Account[]; 
   );
 };
 
-// --- Manage Accounts Component ---
 const ManageAccounts: React.FC<{ accounts: Account[]; onAddAccount: (n: string, i: string) => void; onDeleteAccount: (id: string) => void; }> = ({ accounts, onAddAccount, onDeleteAccount }) => {
   const [name, setName] = useState('');
   return (
@@ -378,7 +384,6 @@ const ManageAccounts: React.FC<{ accounts: Account[]; onAddAccount: (n: string, 
   );
 };
 
-// --- Profile Component ---
 const Profile: React.FC<{ user: User; transactionCount: number; onLogout: () => void; }> = ({ user, transactionCount, onLogout }) => (
   <div className="p-6 max-w-2xl mx-auto space-y-6">
     <h2 className="text-2xl font-bold text-white">User Profile</h2>
@@ -396,11 +401,6 @@ const Profile: React.FC<{ user: User; transactionCount: number; onLogout: () => 
     <button onClick={onLogout} className="w-full bg-red-900/20 text-red-500 border border-red-500/20 py-3 rounded-xl font-bold">Logout Session</button>
   </div>
 );
-
-/** * ==========================================
- * MAIN APP
- * ==========================================
- */
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -456,7 +456,7 @@ const App: React.FC = () => {
   const handleAddTransaction = async (newTx: Omit<Transaction, 'id'>) => {
     try {
       const res = await authFetch(`${API_BASE}/transactions`, { method: 'POST', body: JSON.stringify(newTx) });
-      if (res.ok) { const { id } = await res.json(); setTransactions(prev => [{ ...newTx, id } as Transaction, ...prev]); setCurrentView(AppView.TRANSACTIONS); }
+      if (res.ok) { const data = await res.json(); setTransactions(prev => [{ ...newTx, id: data.id } as Transaction, ...prev]); setCurrentView(AppView.TRANSACTIONS); }
     } catch (err) { console.error("Add error"); }
   };
 
