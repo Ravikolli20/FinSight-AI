@@ -1,0 +1,8 @@
+{
+  "name": "SmartFinance Tracker",
+  "description": "AI-powered personal finance manager with OCR receipt scanning, automated categorization, and financial forecasting using Gemini 2.5 Flash.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
