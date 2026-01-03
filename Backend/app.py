@@ -8,26 +8,27 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 
-
-
-
 app = Flask(__name__)
-# Enable CORS - in production, replace '*' with your actual domain
-CORS(app)
 
-@app.route("/", methods=["GET"])
-def root():
-    return {
-        "status": "Backend is running",
-        "service": "FinSight AI",
-        "environment": "production"
-    }
+# --- Production CORS Setup ---
+# Set FRONTEND_URL in Render environment variables to your Vercel URL
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:4173",
+    os.environ.get('FRONTEND_URL')
+]
+CORS(app, origins=[opt for opt in allowed_origins if opt], supports_credentials=True)
 
-# --- Configuration ---
+# --- Database Configuration ---
 basedir = os.path.abspath(os.path.dirname(__file__))
-# Use environment variables in production; fallback to local for dev
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or \
-    'sqlite:///' + os.path.join(basedir, 'finance.db')
+
+# Render provides 'DATABASE_URL'. 
+db_url = os.environ.get('DATABASE_URL')
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///' + os.path.join(basedir, 'finance.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'smart-finance-super-secret-key-123'
 
@@ -44,12 +45,7 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "email": self.email,
-            "syncToken": self.sync_token
-        }
+        return {"id": self.id, "name": self.name, "email": self.email, "syncToken": self.sync_token}
 
 class Account(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -68,156 +64,130 @@ class Transaction(db.Model):
     description = db.Column(db.String(255), nullable=False)
     category = db.Column(db.String(100), nullable=False)
     date = db.Column(db.String(10), nullable=False)
-    type = db.Column(db.String(10), nullable=False)
+    type = db.Column(db.String(10), nullable=False) 
     method = db.Column(db.String(20), nullable=False)
 
     def to_dict(self):
         return {
-            "id": self.id,
-            "accountId": self.account_id,
-            "amount": self.amount,
-            "description": self.description,
-            "category": self.category,
-            "date": self.date,
-            "type": self.type,
-            "method": self.method
+            "id": self.id, "accountId": self.account_id, "amount": self.amount,
+            "description": self.description, "category": self.category,
+            "date": self.date, "type": self.type, "method": self.method
         }
 
-# --- Utilities ---
+# --- Auth Middleware ---
 
 def generate_token(user_id):
-    payload = {
-        'exp': datetime.utcnow() + timedelta(days=7),
-        'iat': datetime.utcnow(),
-        'sub': user_id
-    }
+    payload = {'exp': datetime.utcnow() + timedelta(days=7), 'iat': datetime.utcnow(), 'sub': user_id}
     return jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
 
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'error': 'Token is missing!'}), 401
+        if not token: return jsonify({'error': 'Token is missing!'}), 401
         try:
-            # Assumes format "Bearer <token>"
-            data = jwt.decode(token.split(" ")[1], app.config['SECRET_KEY'], algorithms=['HS256'])
+            token_val = token.split(" ")[1]
+            data = jwt.decode(token_val, app.config['SECRET_KEY'], algorithms=['HS256'])
             current_user = User.query.get(data['sub'])
-            if not current_user:
-                return jsonify({'error': 'Invalid token!'}), 401
-        except Exception as e:
-            return jsonify({'error': 'Token is invalid!'}), 401
+            if not current_user: return jsonify({'error': 'User not found!'}), 401
+        except Exception: return jsonify({'error': 'Token is invalid!'}), 401
         return f(current_user, *args, **kwargs)
     return decorated
 
-# --- Routes ---
+# --- API Routes ---
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()}), 200
 
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.json
     if not data or not data.get('email') or not data.get('password'):
-        return jsonify({"error": "Missing required fields"}), 400
-
+        return jsonify({"error": "Missing email or password"}), 400
     if User.query.filter_by(email=data.get('email')).first():
-        return jsonify({"error": "User with this email already exists"}), 409
+        return jsonify({"error": "Email already registered"}), 409
     
     hashed_pw = generate_password_hash(data.get('password'))
-    new_token = f"SF-{uuid.uuid4().hex[:6].upper()}"
-    
     new_user = User(
-        name=data.get('name', 'New User'),
-        email=data.get('email'),
-        password_hash=hashed_pw,
-        sync_token=new_token
+        name=data.get('name', 'User'), 
+        email=data.get('email'), 
+        password_hash=hashed_pw, 
+        sync_token=f"SF-{uuid.uuid4().hex[:6].upper()}"
     )
-    
     db.session.add(new_user)
     db.session.flush()
-    
-    # Auto-create default account
     db.session.add(Account(user_id=new_user.id, name="Cash Wallet", icon="💰"))
     db.session.commit()
-    
-    token = generate_token(new_user.id)
-    return jsonify({"user": new_user.to_dict(), "token": token}), 201
+    return jsonify({"user": new_user.to_dict(), "token": generate_token(new_user.id)}), 201
 
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
     if not data or not data.get('email') or not data.get('password'):
         return jsonify({"error": "Missing email or password"}), 400
-
     user = User.query.filter_by(email=data.get('email')).first()
     if user and check_password_hash(user.password_hash, data.get('password')):
-        token = generate_token(user.id)
-        return jsonify({"user": user.to_dict(), "token": token}), 200
+        return jsonify({"user": user.to_dict(), "token": generate_token(user.id)}), 200
+    return jsonify({"error": "Invalid email or password"}), 401
+
+@app.route('/api/accounts', methods=['GET', 'POST', 'DELETE'])
+@token_required
+def handle_accounts(current_user):
+    if request.method == 'POST':
+        data = request.json
+        new_acc = Account(user_id=current_user.id, name=data['name'], icon=data.get('icon', '💼'))
+        db.session.add(new_acc)
+        db.session.commit()
+        return jsonify(new_acc.to_dict()), 201
     
-    return jsonify({"error": "Invalid credentials"}), 401
+    if request.method == 'DELETE':
+        acc_id = request.args.get('id')
+        account = Account.query.filter_by(id=acc_id, user_id=current_user.id).first()
+        if account:
+            # Delete associated transactions first (Cascading)
+            Transaction.query.filter_by(account_id=acc_id, user_id=current_user.id).delete()
+            db.session.delete(account)
+            db.session.commit()
+            return jsonify({"success": True})
+        return jsonify({"error": "Account not found"}), 404
 
-@app.route('/api/accounts', methods=['GET'])
-@token_required
-def get_accounts(current_user):
-    accounts = Account.query.filter_by(user_id=current_user.id).all()
-    return jsonify([a.to_dict() for a in accounts])
+    return jsonify([a.to_dict() for a in Account.query.filter_by(user_id=current_user.id).all()])
 
-@app.route('/api/accounts', methods=['POST'])
+@app.route('/api/transactions', methods=['GET', 'POST', 'DELETE'])
 @token_required
-def add_account(current_user):
-    data = request.json
-    if not data.get('name'):
-        return jsonify({"error": "Account name is required"}), 400
-        
-    new_acc = Account(
-        user_id=current_user.id,
-        name=data.get('name'),
-        icon=data.get('icon', '💼')
-    )
-    db.session.add(new_acc)
-    db.session.commit()
-    return jsonify(new_acc.to_dict()), 201
-
-@app.route('/api/transactions', methods=['GET'])
-@token_required
-def get_transactions(current_user):
-    transactions = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).all()
-    return jsonify([t.to_dict() for t in transactions])
-
-@app.route('/api/transactions', methods=['POST'])
-@token_required
-def add_transaction(current_user):
-    data = request.json
-    # Validation
-    if not data.get('accountId') or not data.get('amount'):
-        return jsonify({"error": "Missing transaction data"}), 400
+def handle_transactions(current_user):
+    if request.method == 'POST':
+        data = request.json
+        new_tx = Transaction(
+            user_id=current_user.id, 
+            account_id=data['accountId'], 
+            amount=float(data['amount']), 
+            description=data['description'], 
+            category=data['category'], 
+            date=data['date'], 
+            type=data['type'], 
+            method=data['method']
+        )
+        db.session.add(new_tx)
+        db.session.commit()
+        return jsonify(new_tx.to_dict()), 201
     
-    new_tx = Transaction(
-        user_id=current_user.id,
-        account_id=data.get('accountId'),
-        amount=float(data.get('amount')),
-        description=data.get('description', 'No description'),
-        category=data.get('category', 'Other'),
-        date=data.get('date', datetime.utcnow().strftime('%Y-%m-%d')),
-        type=data.get('type', 'expense'),
-        method=data.get('method', 'cash')
-    )
-    db.session.add(new_tx)
-    db.session.commit()
-    return jsonify({"id": new_tx.id}), 201
-
-@app.route('/api/transactions', methods=['DELETE'])
-@token_required
-def delete_transaction(current_user):
-    tx_id = request.args.get('id')
-    tx = Transaction.query.filter_by(id=tx_id, user_id=current_user.id).first()
-    if not tx:
+    if request.method == 'DELETE':
+        tx_id = request.args.get('id')
+        tx = Transaction.query.filter_by(id=tx_id, user_id=current_user.id).first()
+        if tx:
+            db.session.delete(tx)
+            db.session.commit()
+            return jsonify({"success": True})
         return jsonify({"error": "Transaction not found"}), 404
-    db.session.delete(tx)
-    db.session.commit()
-    return jsonify({"success": True})
+        
+    return jsonify([t.to_dict() for t in Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).all()])
 
-# Create tables
+# --- Server Start ---
 with app.app_context():
     db.create_all()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
