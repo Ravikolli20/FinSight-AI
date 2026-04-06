@@ -92,14 +92,16 @@ const callGemini = async (prompt: string, systemInstruction: string = "") => {
   }
 
   try {
-     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    // Switched to stable v1 endpoint and gemini-1.5-flash
+    // Also corrected systemInstruction to system_instruction (REST API snake_case)
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined
+          system_instruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined
         })
       }
     );
