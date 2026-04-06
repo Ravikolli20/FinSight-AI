@@ -71,10 +71,11 @@ enum AppView {
 }
 /**
  * ==========================================
- * AI SERVICES (STABLE VERSION)
+ * AI SERVICES (FINAL - PRODUCTION READY)
  * ==========================================
  */
 
+//  Get API Key
 const getGeminiKey = () => {
   try {
     if (
@@ -90,47 +91,64 @@ const getGeminiKey = () => {
 
 const GEMINI_API_KEY = getGeminiKey();
 
+//  Available models (based on YOUR API)
+const MODELS = [
+  "gemini-flash-latest",   // ✅ safest
+  "gemini-2.5-flash",
+  "gemini-2.0-flash"
+];
+
+//  Main function
 export const callGemini = async (
   prompt: string,
   systemInstruction: string = ""
 ): Promise<string> => {
   if (!GEMINI_API_KEY) {
-    return "AI Configuration Error: API key missing.";
+    return "AI Config Error: Missing API key. Add VITE_GEMINI_API_KEY in Vercel.";
   }
 
-  try {
-    const fullPrompt = systemInstruction
-      ? `SYSTEM:\n${systemInstruction}\n\nUSER:\n${prompt}`
-      : prompt;
+  const fullPrompt = systemInstruction
+    ? `SYSTEM:\n${systemInstruction}\n\nUSER:\n${prompt}`
+    : prompt;
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: fullPrompt }] }],
-        }),
+  //  Try models one by one (fallback system)
+  for (const model of MODELS) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: fullPrompt }] }],
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`Model ${model} failed:`, errText);
+        continue; // try next model
       }
-    );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Gemini API Error:", errorText);
-      return `AI Service Error: ${errorText}`;
+      const data = await response.json();
+
+      const text =
+        data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join(" ") ||
+        data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (text) return text;
+
+    } catch (err) {
+      console.warn(`Error with model ${model}:`, err);
+      continue;
     }
-
-    const result = await response.json();
-
-    return (
-      result?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "No response generated."
-    );
-  } catch (error) {
-    return "Connection failed.";
   }
+
+  //  If all models fail
+  return "AI Service Error: All available models failed. Check API key or billing.";
 };
 /** * ==========================================
  * COMPONENTS
