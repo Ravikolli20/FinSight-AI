@@ -92,16 +92,19 @@ const callGemini = async (prompt: string, systemInstruction: string = "") => {
   }
 
   try {
-    // Switched to stable v1 endpoint and gemini-1.5-flash
-    // Also corrected systemInstruction to system_instruction (REST API snake_case)
+    // To solve the "system_instruction" field error, we prepend the instruction to the main prompt.
+    // This is the most robust method for raw REST API calls across all Gemini model versions.
+    const fullPrompt = systemInstruction 
+      ? `SYSTEM INSTRUCTION: ${systemInstruction}\n\nUSER QUESTION: ${prompt}` 
+      : prompt;
+
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          system_instruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined
+          contents: [{ parts: [{ text: fullPrompt }] }]
         })
       }
     );
@@ -117,7 +120,6 @@ const callGemini = async (prompt: string, systemInstruction: string = "") => {
     return "Connection failed: I can't reach the AI server right now. Please check your internet connection.";
   }
 };
-
 /** * ==========================================
  * COMPONENTS
  * ==========================================
