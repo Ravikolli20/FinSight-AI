@@ -69,55 +69,81 @@ enum AppView {
   ACCOUNTS = 'ACCOUNTS',
   PROFILE = 'PROFILE',
 }
-
-/** * ==========================================
- * AI SERVICES
+/**
+ * ==========================================
+ * AI SERVICES (UPDATED - 2026 READY)
  * ==========================================
  */
 
+//  Get API Key safely
 const getGeminiKey = () => {
   try {
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+    if (
+      typeof import.meta !== "undefined" &&
+      import.meta.env &&
+      import.meta.env.VITE_GEMINI_API_KEY
+    ) {
       return import.meta.env.VITE_GEMINI_API_KEY;
     }
   } catch (e) {}
-  return ""; 
+  return "";
 };
 
 const GEMINI_API_KEY = getGeminiKey();
 
-const callGemini = async (prompt: string, systemInstruction: string = "") => {
+//  Main Gemini Call Function
+export const callGemini = async (
+  prompt: string,
+  systemInstruction: string = ""
+): Promise<string> => {
   if (!GEMINI_API_KEY) {
-    return "AI Configuration Error: VITE_GEMINI_API_KEY is not set in your environment variables. Please add it to your Vercel project settings.";
+    return "AI Configuration Error: VITE_GEMINI_API_KEY is missing. Add it in Vercel env variables and redeploy.";
   }
 
   try {
-    // To solve the "system_instruction" field error, we prepend the instruction to the main prompt.
-    // This is the most robust method for raw REST API calls across all Gemini model versions.
-    const fullPrompt = systemInstruction 
-      ? `SYSTEM INSTRUCTION: ${systemInstruction}\n\nUSER QUESTION: ${prompt}` 
+    // Combine system + user prompt (safe for REST API)
+    const fullPrompt = systemInstruction
+      ? `SYSTEM:\n${systemInstruction}\n\nUSER:\n${prompt}`
       : prompt;
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: fullPrompt }] }]
-        })
+          contents: [
+            {
+              parts: [{ text: fullPrompt }],
+            },
+          ],
+        }),
       }
     );
-    
+
+    // Handle API errors properly
     if (!response.ok) {
-      const errorData = await response.json();
-      return `AI Service Error: ${errorData.error?.message || "Check your API key status."}`;
+      const errorText = await response.text();
+      console.error("Gemini API Error:", errorText);
+
+      return `AI Service Error: ${
+        errorText || "Request failed. Check API key / model access."
+      }`;
     }
 
     const result = await response.json();
-    return result.candidates?.[0]?.content?.parts?.[0]?.text || "I processed that, but I'm having trouble phrasing an answer.";
-  } catch (error) {
-    return "Connection failed: I can't reach the AI server right now. Please check your internet connection.";
+
+    
+    const text =
+      result?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      result?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join(" ");
+
+    return text || "AI returned an empty response.";
+  } catch (error: any) {
+    console.error("Connection Error:", error);
+    return "Connection failed: Unable to reach AI server.";
   }
 };
 /** * ==========================================
