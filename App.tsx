@@ -75,12 +75,25 @@ enum AppView {
  * ==========================================
  */
 
-const apiKey = ""; 
+const getGeminiKey = () => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+      return import.meta.env.VITE_GEMINI_API_KEY;
+    }
+  } catch (e) {}
+  return ""; 
+};
+
+const GEMINI_API_KEY = getGeminiKey();
 
 const callGemini = async (prompt: string, systemInstruction: string = "") => {
+  if (!GEMINI_API_KEY) {
+    return "AI Configuration Error: VITE_GEMINI_API_KEY is not set in your environment variables. Please add it to your Vercel project settings.";
+  }
+
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -90,10 +103,16 @@ const callGemini = async (prompt: string, systemInstruction: string = "") => {
         })
       }
     );
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      return `AI Service Error: ${errorData.error?.message || "Check your API key status."}`;
+    }
+
     const result = await response.json();
-    return result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return result.candidates?.[0]?.content?.parts?.[0]?.text || "I processed that, but I'm having trouble phrasing an answer.";
   } catch (error) {
-    return "I'm having trouble connecting to my brain right now. Please try again.";
+    return "Connection failed: I can't reach the AI server right now. Please check your internet connection.";
   }
 };
 
